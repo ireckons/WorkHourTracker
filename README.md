@@ -1,3 +1,28 @@
+# Working Hour Tracker
+
+## Overview
+A simple project to log and track working hours for team members.
+
+## Features
+- Log start and end times
+- Calculate total hours worked
+- Export logs to CSV/JSON
+
+## Setup
+1. Clone the repository
+2. Install dependencies (`pip install -r requirements.txt` or `npm install`)
+3. Run the app (`python main.py` or `node app.js`)
+
+## Contribution
+- Work on separate branches
+- Submit pull requests for review
+
+
+
+
+
+
+
 # React + Vite
 
 This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
