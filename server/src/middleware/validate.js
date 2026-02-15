@@ -38,6 +38,7 @@ const registerRules = [
 const loginRules = [
     body('email').isEmail().withMessage('Valid email is required').normalizeEmail(),
     body('password').notEmpty().withMessage('Password is required'),
+    body('adminLogin').optional().isBoolean().withMessage('adminLogin must be boolean'),
 ];
 
 const goalRules = [
@@ -56,10 +57,25 @@ const dateQueryRule = [
         .withMessage('Date must be in YYYY-MM-DD format'),
 ];
 
+const promoteRules = [
+    body('userId').isMongoId().withMessage('Valid userId is required'),
+    body('makeAdmin').isBoolean().withMessage('makeAdmin must be boolean'),
+];
+
+const inviteRules = [
+    body('email').isEmail().withMessage('Valid email is required').normalizeEmail(),
+    body('expiresInHours')
+        .optional()
+        .isInt({ min: 1, max: 168 })
+        .withMessage('Expiry must be between 1 and 168 hours'),
+];
+
 module.exports = {
     validate,
     registerRules,
     loginRules,
     goalRules,
     dateQueryRule,
+    promoteRules,
+    inviteRules,
 };

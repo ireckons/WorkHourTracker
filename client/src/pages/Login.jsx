@@ -5,14 +5,15 @@ import { useAuth } from '../context/AuthContext';
 function Login() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [adminLogin, setAdminLogin] = useState(false);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
-    const { login, isAuthenticated } = useAuth();
+    const { login, isAuthenticated, isAdmin } = useAuth();
     const navigate = useNavigate();
 
     // Redirect if already logged in
     if (isAuthenticated) {
-        navigate('/dashboard', { replace: true });
+        navigate(isAdmin ? '/admin-dashboard' : '/dashboard', { replace: true });
         return null;
     }
 
@@ -21,10 +22,19 @@ function Login() {
         setError('');
         setLoading(true);
         try {
-            await login(email, password);
-            navigate('/dashboard');
+            const data = await login(email, password, adminLogin);
+            if (data.user?.isAdmin) {
+                navigate('/admin-dashboard');
+            } else {
+                navigate('/dashboard');
+            }
         } catch (err) {
-            setError(err.response?.data?.error || 'Login failed. Please try again.');
+            const status = err.response?.status;
+            if (status === 403) {
+                setError('Admin access denied. Your account does not have admin privileges.');
+            } else {
+                setError(err.response?.data?.error || 'Login failed. Please try again.');
+            }
         } finally {
             setLoading(false);
         }
@@ -67,8 +77,27 @@ function Login() {
                         />
                     </div>
 
+                    <div className="admin-toggle">
+                        <label className="toggle-label" htmlFor="adminToggle">
+                            <input
+                                id="adminToggle"
+                                type="checkbox"
+                                checked={adminLogin}
+                                onChange={(e) => setAdminLogin(e.target.checked)}
+                                className="toggle-input"
+                            />
+                            <span className="toggle-switch" />
+                            <span className="toggle-text">Login as Admin</span>
+                        </label>
+                        {adminLogin && (
+                            <p className="admin-toggle-info">
+                                🔒 Admin status is verified by the server
+                            </p>
+                        )}
+                    </div>
+
                     <button type="submit" className="btn btn-primary btn-full" disabled={loading}>
-                        {loading ? 'Signing in...' : 'Sign In'}
+                        {loading ? 'Signing in...' : adminLogin ? '🔐 Sign In as Admin' : 'Sign In'}
                     </button>
                 </form>
 

@@ -33,6 +33,14 @@ const userSchema = new mongoose.Schema(
             min: 0.5,
             max: 24,
         },
+        isAdmin: {
+            type: Boolean,
+            default: false,
+        },
+        lastLoginAt: {
+            type: Date,
+            default: null,
+        },
     },
     { timestamps: true }
 );

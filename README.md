@@ -15,6 +15,11 @@ A full-stack time-tracking web application built with **React 18**, **Node.js + 
 - **Timezone-aware** — All calculations use IANA timezones; overnight sessions handled correctly
 - **Responsive design** — Dark glassmorphism UI that works on desktop and mobile
 - **Accessible** — Progress bar with ARIA attributes and numeric readout
+- **Admin dashboard** — View all employees, progress, status, and hours
+- **Admin onboarding** — Secure invite-based admin creation with single-use tokens
+- **Promote/demote** — Admins can manage other users' admin status
+- **Audit logging** — Every admin action is recorded with actor, target, and timestamp
+- **CSV export** — Download daily summary reports for all employees
 
 ## Architecture
 
@@ -22,18 +27,20 @@ A full-stack time-tracking web application built with **React 18**, **Node.js + 
 WorkHourTracker/
 ├── server/          # Express + Mongoose API (port 5000)
 │   ├── src/
-│   │   ├── models/   # User, Session, DailyGoal
-│   │   ├── routes/   # auth, sessions, goals, user
-│   │   ├── middleware/ # JWT auth, rate-limiter, validation
+│   │   ├── models/   # User, Session, DailyGoal, AdminInvite, AuditLog
+│   │   ├── routes/   # auth, sessions, goals, user, admin
+│   │   ├── middleware/ # JWT auth, adminOnly, rate-limiter, validation
 │   │   └── utils/    # Time calculations & day-splitting
-│   ├── tests/       # Jest unit + integration tests
-│   └── seed.js      # Demo data seed script
+│   ├── tests/       # Jest unit + integration tests (incl. admin)
+│   └── seed.js      # Demo data seed script (admin + employees)
 ├── client/          # Vite + React 18 (port 5173)
 │   ├── src/
-│   │   ├── pages/     # Login, Register, Dashboard
-│   │   ├── components/ # ProgressBar, SessionList, GoalEditor, Navbar
+│   │   ├── pages/     # Login, Register, Dashboard, AdminDashboard
+│   │   ├── components/ # ProgressBar, SessionList, GoalEditor, Navbar,
+│   │   │              # AdminRoute, AdminUserTable, AdminInviteModal,
+│   │   │              # AuditLogViewer
 │   │   ├── context/   # AuthContext (React Context + useReducer)
-│   │   └── styles/    # Dark theme CSS
+│   │   └── styles/    # Dark theme CSS + AdminDashboard CSS
 │   └── tests/       # Vitest unit tests
 ├── demo.js          # CLI demo script
 └── README.md
@@ -70,6 +77,7 @@ JWT_SECRET=your-super-secret-key-change-in-production
 JWT_EXPIRES_IN=7d
 CLIENT_URL=http://localhost:5173
 NODE_ENV=development
+ADMIN_INVITE_EXPIRY_HOURS=48
 ```
 
 **Client** (`client/.env.example`):
@@ -86,7 +94,9 @@ cd server
 node seed.js
 ```
 
-Creates a demo user: `demo@example.com` / `password123` with sample sessions.
+Creates seeded accounts:
+- **Admin**: `admin@example.com` / `admin123`
+- **Employees**: `demo@example.com`, `alice@example.com`, `bob@example.com` (all `password123`)
 
 ### 4. Run development servers
 
@@ -115,9 +125,12 @@ node demo.js
 
 | Endpoint | Method | Description | Body |
 |---|---|---|---|
-| `/api/auth/register` | POST | Register new user | `{ name, email, password }` |
-| `/api/auth/login` | POST | Login | `{ email, password }` |
+| `/api/auth/register` | POST | Register new user | `{ name, email, password, inviteToken? }` |
+| `/api/auth/login` | POST | Login | `{ email, password, adminLogin? }` |
 | `/api/auth/logout` | POST | Logout (clears cookie) | — |
+
+> If `adminLogin: true` is passed but the user is not an admin, the server returns **HTTP 403**.
+> If `inviteToken` is provided during registration and is valid, the user is created with `isAdmin=true`.
 
 **Register example:**
 ```bash
@@ -180,6 +193,40 @@ curl -X POST http://localhost:5000/api/auth/register \
 |---|---|---|
 | `/api/health` | GET | Server health check |
 
+### Admin (requires admin role)
+
+| Endpoint | Method | Description |
+|---|---|---|
+| `/api/admin/users?date=YYYY-MM-DD` | GET | All users with hours/goals/progress |
+| `/api/admin/users/:id/sessions?date=` | GET | View any user's sessions |
+| `/api/admin/promote` | POST | Promote/demote: `{ userId, makeAdmin }` |
+| `/api/admin/invite` | POST | Create invite: `{ email, expiresInHours? }` |
+| `/api/admin/audit?page=&limit=` | GET | Audit log entries (paginated) |
+| `/api/admin/export?date=YYYY-MM-DD` | GET | CSV export of daily summary |
+
+## Admin Onboarding & Security Model
+
+### Creating the First Admin
+
+Run the seed script — it creates `admin@example.com` with `isAdmin: true`.
+
+### Inviting New Admins
+
+1. Existing admin navigates to the Admin Dashboard and clicks **Invite Admin**
+2. Enters the invitee's email and expiry (default 48h)
+3. System generates a **single-use, cryptographically random token** (48 bytes hex)
+4. Admin shares the invite link: `http://localhost:5173/register?inviteToken=<token>`
+5. Invitee registers using the link — created as admin automatically
+6. Token is marked used and cannot be reused
+
+### Security Measures
+
+- **No self-declaration**: `isAdmin` from client payload is always stripped
+- **Double verification**: `adminOnly` middleware checks JWT claim AND re-verifies from DB
+- **Invite tokens**: single-use, time-limited, email-matched
+- **Audit trail**: every promote/demote, invite creation/use, and admin login attempt logged
+- **Self-demotion blocked**: admins cannot demote themselves (last-admin safeguard)
+
 ## Key Logic: Time Calculations
 
 ### Overnight Session Splitting
@@ -212,7 +259,7 @@ npm test
 
 Runs:
 - **Unit tests**: Duration calculation, overnight splitting, progress percent
-- **Integration tests**: Auth flow (register/login/logout), session CRUD, goal CRUD
+- **Integration tests**: Auth flow, session CRUD, goal CRUD, admin invite lifecycle, promotion authorization, security (isAdmin payload ignored)
 
 ### Client tests (Vitest)
 
@@ -253,9 +300,12 @@ Runs:
 ## Security
 
 - **Passwords** hashed with bcrypt (12 rounds)
-- **JWT** stored in HttpOnly, Secure, SameSite cookies
-- **Rate limiting** on auth endpoints (10 req / 15 min per IP)
+- **JWT** stored in HttpOnly, Secure, SameSite cookies; includes `isAdmin` claim (verified from DB)
+- **Admin access**: double-checked via JWT + DB re-verification on every admin request
+- **Invite tokens**: 48-byte crypto-random, single-use, time-limited, email-matched
+- **Rate limiting** on auth and admin endpoints (10 req / 15 min per IP)
 - **Input validation** on all endpoints via express-validator
+- **Audit logging**: all admin actions recorded with actor, target, details, timestamp
 - **CORS** restricted to configured client origin
 - **Secrets** stored in environment variables (never committed)
 

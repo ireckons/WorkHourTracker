@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 function Register() {
@@ -10,6 +10,9 @@ function Register() {
     const [loading, setLoading] = useState(false);
     const { register, isAuthenticated } = useAuth();
     const navigate = useNavigate();
+    const [searchParams] = useSearchParams();
+
+    const inviteToken = searchParams.get('inviteToken');
 
     if (isAuthenticated) {
         navigate('/dashboard', { replace: true });
@@ -21,8 +24,12 @@ function Register() {
         setError('');
         setLoading(true);
         try {
-            await register(name, email, password);
-            navigate('/dashboard');
+            const data = await register(name, email, password, inviteToken);
+            if (data.user?.isAdmin) {
+                navigate('/admin-dashboard');
+            } else {
+                navigate('/dashboard');
+            }
         } catch (err) {
             setError(err.response?.data?.error || 'Registration failed. Please try again.');
         } finally {
@@ -37,6 +44,13 @@ function Register() {
                     <h1>Create Account</h1>
                     <p>Start tracking your work hours today</p>
                 </div>
+
+                {inviteToken && (
+                    <div className="invite-badge">
+                        <span className="invite-badge-icon">🔑</span>
+                        <span>Registering as Admin via invite</span>
+                    </div>
+                )}
 
                 {error && <div className="alert alert-error">{error}</div>}
 
@@ -82,7 +96,11 @@ function Register() {
                     </div>
 
                     <button type="submit" className="btn btn-primary btn-full" disabled={loading}>
-                        {loading ? 'Creating account...' : 'Create Account'}
+                        {loading
+                            ? 'Creating account...'
+                            : inviteToken
+                                ? '🔑 Create Admin Account'
+                                : 'Create Account'}
                     </button>
                 </form>
 

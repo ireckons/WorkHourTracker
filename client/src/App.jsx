@@ -2,9 +2,11 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './context/AuthContext';
 import Navbar from './components/Navbar';
 import ProtectedRoute from './components/ProtectedRoute';
+import AdminRoute from './components/AdminRoute';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
+import AdminDashboard from './pages/AdminDashboard';
 
 function App() {
     const { loading } = useAuth();
@@ -31,6 +33,14 @@ function App() {
                             <ProtectedRoute>
                                 <Dashboard />
                             </ProtectedRoute>
+                        }
+                    />
+                    <Route
+                        path="/admin-dashboard"
+                        element={
+                            <AdminRoute>
+                                <AdminDashboard />
+                            </AdminRoute>
                         }
                     />
                     <Route path="*" element={<Navigate to="/dashboard" replace />} />

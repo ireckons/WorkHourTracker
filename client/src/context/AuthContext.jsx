@@ -6,16 +6,22 @@ const AuthContext = createContext(null);
 const initialState = {
     user: null,
     isAuthenticated: false,
+    isAdmin: false,
     loading: true,
 };
 
 function authReducer(state, action) {
     switch (action.type) {
         case 'AUTH_SUCCESS':
-            return { user: action.payload, isAuthenticated: true, loading: false };
+            return {
+                user: action.payload,
+                isAuthenticated: true,
+                isAdmin: action.payload?.isAdmin || false,
+                loading: false,
+            };
         case 'AUTH_FAIL':
         case 'LOGOUT':
-            return { user: null, isAuthenticated: false, loading: false };
+            return { user: null, isAuthenticated: false, isAdmin: false, loading: false };
         case 'SET_LOADING':
             return { ...state, loading: true };
         default:
@@ -40,14 +46,18 @@ export function AuthProvider({ children }) {
         loadUser();
     }, [loadUser]);
 
-    const register = async (name, email, password) => {
-        const res = await api.post('/auth/register', { name, email, password });
+    const register = async (name, email, password, inviteToken = null) => {
+        const body = { name, email, password };
+        if (inviteToken) body.inviteToken = inviteToken;
+        const res = await api.post('/auth/register', body);
         dispatch({ type: 'AUTH_SUCCESS', payload: res.data.user });
         return res.data;
     };
 
-    const login = async (email, password) => {
-        const res = await api.post('/auth/login', { email, password });
+    const login = async (email, password, adminLogin = false) => {
+        const body = { email, password };
+        if (adminLogin) body.adminLogin = true;
+        const res = await api.post('/auth/login', body);
         dispatch({ type: 'AUTH_SUCCESS', payload: res.data.user });
         return res.data;
     };
