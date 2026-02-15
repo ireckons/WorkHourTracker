@@ -13,6 +13,9 @@ const {
     getTodayInTimezone,
     getDayBounds,
     formatDuration,
+    getWeekBounds,
+    getMonthBounds,
+    computeRangeTotal,
 } = require('../utils/time');
 
 const router = express.Router();
@@ -51,6 +54,47 @@ router.get('/users', validate(dateQueryRule), async (req, res) => {
                 const progressPercent = computeProgressPercent(totalMs, goalHours);
                 const isOnline = sessions.some((s) => !s.endAt);
 
+                // --- Weekly totals (always current week, Mon-Sun) ---
+                const week = getWeekBounds(timezone);
+                const weekSessions = await Session.find({
+                    userId: user._id,
+                    startAt: { $lt: week.rangeEnd },
+                    $or: [{ endAt: { $gte: week.rangeStart } }, { endAt: null }],
+                });
+                const weekTotalMs = computeRangeTotal(weekSessions, week.dates, timezone);
+
+                // Sum goals for each day of the week
+                const weekGoalDocs = await DailyGoal.find({
+                    userId: user._id,
+                    date: { $in: week.dates },
+                }).lean();
+                const weekGoalMap = {};
+                for (const g of weekGoalDocs) weekGoalMap[g.date] = g.goalHours;
+                const weekGoalHours = week.dates.reduce(
+                    (sum, d) => sum + (weekGoalMap[d] !== undefined ? weekGoalMap[d] : user.defaultDailyGoal),
+                    0
+                );
+
+                // --- Monthly totals (always current month) ---
+                const month = getMonthBounds(timezone);
+                const monthSessions = await Session.find({
+                    userId: user._id,
+                    startAt: { $lt: month.rangeEnd },
+                    $or: [{ endAt: { $gte: month.rangeStart } }, { endAt: null }],
+                });
+                const monthTotalMs = computeRangeTotal(monthSessions, month.dates, timezone);
+
+                const monthGoalDocs = await DailyGoal.find({
+                    userId: user._id,
+                    date: { $in: month.dates },
+                }).lean();
+                const monthGoalMap = {};
+                for (const g of monthGoalDocs) monthGoalMap[g.date] = g.goalHours;
+                const monthGoalHours = month.dates.reduce(
+                    (sum, d) => sum + (monthGoalMap[d] !== undefined ? monthGoalMap[d] : user.defaultDailyGoal),
+                    0
+                );
+
                 return {
                     _id: user._id,
                     name: user.name,
@@ -62,6 +106,11 @@ router.get('/users', validate(dateQueryRule), async (req, res) => {
                     progressPercent: Math.round(progressPercent * 100) / 100,
                     isOnline,
                     lastLoginAt: user.lastLoginAt,
+                    // Period stats
+                    weekTotalHours: Math.round((weekTotalMs / 3600000) * 10) / 10,
+                    weekGoalHours: Math.round(weekGoalHours * 10) / 10,
+                    monthTotalHours: Math.round((monthTotalMs / 3600000) * 10) / 10,
+                    monthGoalHours: Math.round(monthGoalHours * 10) / 10,
                 };
             })
         );

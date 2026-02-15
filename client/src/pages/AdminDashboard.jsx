@@ -15,6 +15,7 @@ function AdminDashboard() {
     const [sortBy, setSortBy] = useState('name');
     const [showInviteModal, setShowInviteModal] = useState(false);
     const [showAuditLog, setShowAuditLog] = useState(false);
+    const [periodView, setPeriodView] = useState('week');
 
     const fetchUsers = useCallback(async (queryDate) => {
         try {
@@ -165,6 +166,8 @@ function AdminDashboard() {
                     users={filteredUsers}
                     onPromote={handlePromote}
                     date={selectedDate || date}
+                    periodView={periodView}
+                    onPeriodChange={setPeriodView}
                 />
             )}
 

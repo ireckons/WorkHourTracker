@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import api from '../api/axios';
 
-function AdminUserTable({ users, onPromote, date }) {
+function AdminUserTable({ users, onPromote, date, periodView, onPeriodChange }) {
     const [expandedUser, setExpandedUser] = useState(null);
     const [sessions, setSessions] = useState([]);
     const [loadingSessions, setLoadingSessions] = useState(false);
@@ -36,6 +36,22 @@ function AdminUserTable({ users, onPromote, date }) {
         return `${h}h ${m}m`;
     };
 
+    /** Get the period worked / goal string like "13 / 16" */
+    const getPeriodText = (user) => {
+        if (periodView === 'month') {
+            return `${user.monthTotalHours} / ${user.monthGoalHours}`;
+        }
+        return `${user.weekTotalHours} / ${user.weekGoalHours}`;
+    };
+
+    /** Get the period progress percent */
+    const getPeriodPercent = (user) => {
+        const total = periodView === 'month' ? user.monthTotalHours : user.weekTotalHours;
+        const goal = periodView === 'month' ? user.monthGoalHours : user.weekGoalHours;
+        if (!goal || goal <= 0) return 100;
+        return Math.min(100, Math.round((total / goal) * 100));
+    };
+
     if (users.length === 0) {
         return <div className="admin-empty">No users found</div>;
     }
@@ -53,6 +69,22 @@ function AdminUserTable({ users, onPromote, date }) {
                         <th>Status</th>
                         <th>Role</th>
                         <th>Actions</th>
+                        <th>
+                            <div className="period-toggle">
+                                <button
+                                    className={`period-toggle-btn ${periodView === 'week' ? 'active' : ''}`}
+                                    onClick={() => onPeriodChange('week')}
+                                >
+                                    Week
+                                </button>
+                                <button
+                                    className={`period-toggle-btn ${periodView === 'month' ? 'active' : ''}`}
+                                    onClick={() => onPeriodChange('month')}
+                                >
+                                    Month
+                                </button>
+                            </div>
+                        </th>
                     </tr>
                 </thead>
                 <tbody>
@@ -69,6 +101,7 @@ function AdminUserTable({ users, onPromote, date }) {
                                 </td>
                                 <td className="email-cell">{user.email}</td>
                                 <td className="hours-cell">{user.totalFormatted}</td>
+
                                 <td>{user.goalHours}h</td>
                                 <td>
                                     <div className="mini-progress-wrap">
@@ -110,12 +143,25 @@ function AdminUserTable({ users, onPromote, date }) {
                                         {user.isAdmin ? '⬇️' : '⬆️'}
                                     </button>
                                 </td>
+
+                                {/* Period column: worked / goal */}
+                                <td>
+                                    <div className="period-cell">
+                                        <span className="period-text">{getPeriodText(user)}</span>
+                                        <div className="period-bar">
+                                            <div
+                                                className="period-bar-fill"
+                                                style={{ width: `${getPeriodPercent(user)}%` }}
+                                            />
+                                        </div>
+                                    </div>
+                                </td>
                             </tr>
 
                             {/* Expanded sessions row */}
                             {expandedUser === user._id && (
                                 <tr key={`${user._id}-sessions`} className="sessions-row">
-                                    <td colSpan="8">
+                                    <td colSpan="9">
                                         <div className="sessions-drawer">
                                             <h4>Sessions for {user.name} — {date}</h4>
                                             {loadingSessions ? (

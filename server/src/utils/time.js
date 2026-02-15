@@ -129,6 +129,82 @@ function formatDuration(ms) {
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}`;
 }
 
+/**
+ * Get start (Monday) and end (next Monday) of the current week in the user's timezone.
+ * Always returns the full current week regardless of which day it is.
+ * @param {string} timezone
+ * @returns {{ rangeStart: Date, rangeEnd: Date, dates: string[] }}
+ */
+function getWeekBounds(timezone) {
+    const now = DateTime.now().setZone(timezone);
+    // Luxon weekday: 1=Monday, 7=Sunday
+    const monday = now.startOf('week'); // Monday 00:00
+    const nextMonday = monday.plus({ weeks: 1 });
+
+    // Generate all date strings in the week
+    const dates = [];
+    let cursor = monday;
+    while (cursor < nextMonday) {
+        dates.push(cursor.toFormat('yyyy-MM-dd'));
+        cursor = cursor.plus({ days: 1 });
+    }
+
+    return {
+        rangeStart: monday.toJSDate(),
+        rangeEnd: nextMonday.toJSDate(),
+        dates,
+    };
+}
+
+/**
+ * Get start and end of the current month in the user's timezone.
+ * @param {string} timezone
+ * @returns {{ rangeStart: Date, rangeEnd: Date, dates: string[] }}
+ */
+function getMonthBounds(timezone) {
+    const now = DateTime.now().setZone(timezone);
+    const monthStart = now.startOf('month');
+    const nextMonth = monthStart.plus({ months: 1 });
+
+    const dates = [];
+    let cursor = monthStart;
+    while (cursor < nextMonth) {
+        dates.push(cursor.toFormat('yyyy-MM-dd'));
+        cursor = cursor.plus({ days: 1 });
+    }
+
+    return {
+        rangeStart: monthStart.toJSDate(),
+        rangeEnd: nextMonth.toJSDate(),
+        dates,
+    };
+}
+
+/**
+ * Compute total worked milliseconds across a date range.
+ * Sums the day-by-day split for each session within the range.
+ *
+ * @param {Array} sessions - Mongoose Session documents within the range
+ * @param {string[]} dates - Array of 'YYYY-MM-DD' date strings in the range
+ * @param {string} timezone
+ * @returns {number} Total ms worked in the range
+ */
+function computeRangeTotal(sessions, dates, timezone) {
+    const dateSet = new Set(dates);
+    let totalMs = 0;
+
+    for (const session of sessions) {
+        const segments = splitSessionByDay(session, timezone);
+        for (const seg of segments) {
+            if (dateSet.has(seg.date)) {
+                totalMs += seg.durationMs;
+            }
+        }
+    }
+
+    return totalMs;
+}
+
 module.exports = {
     splitSessionByDay,
     computeDayTotal,
@@ -136,4 +212,7 @@ module.exports = {
     getTodayInTimezone,
     getDayBounds,
     formatDuration,
+    getWeekBounds,
+    getMonthBounds,
+    computeRangeTotal,
 };

@@ -5,7 +5,6 @@ import { useAuth } from '../context/AuthContext';
 function Login() {
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
-    const [adminLogin, setAdminLogin] = useState(false);
     const [error, setError] = useState('');
     const [loading, setLoading] = useState(false);
     const { login, isAuthenticated, isAdmin } = useAuth();
@@ -22,7 +21,8 @@ function Login() {
         setError('');
         setLoading(true);
         try {
-            const data = await login(email, password, adminLogin);
+            // Always attempt admin-aware login; server determines role
+            const data = await login(email, password, true);
             if (data.user?.isAdmin) {
                 navigate('/admin-dashboard');
             } else {
@@ -31,7 +31,13 @@ function Login() {
         } catch (err) {
             const status = err.response?.status;
             if (status === 403) {
-                setError('Admin access denied. Your account does not have admin privileges.');
+                // Non-admin tried adminLogin — just do a normal login instead
+                try {
+                    const data = await login(email, password, false);
+                    navigate('/dashboard');
+                } catch (err2) {
+                    setError(err2.response?.data?.error || 'Login failed. Please try again.');
+                }
             } else {
                 setError(err.response?.data?.error || 'Login failed. Please try again.');
             }
@@ -77,27 +83,8 @@ function Login() {
                         />
                     </div>
 
-                    <div className="admin-toggle">
-                        <label className="toggle-label" htmlFor="adminToggle">
-                            <input
-                                id="adminToggle"
-                                type="checkbox"
-                                checked={adminLogin}
-                                onChange={(e) => setAdminLogin(e.target.checked)}
-                                className="toggle-input"
-                            />
-                            <span className="toggle-switch" />
-                            <span className="toggle-text">Login as Admin</span>
-                        </label>
-                        {adminLogin && (
-                            <p className="admin-toggle-info">
-                                🔒 Admin status is verified by the server
-                            </p>
-                        )}
-                    </div>
-
                     <button type="submit" className="btn btn-primary btn-full" disabled={loading}>
-                        {loading ? 'Signing in...' : adminLogin ? '🔐 Sign In as Admin' : 'Sign In'}
+                        {loading ? 'Signing in...' : 'Sign In'}
                     </button>
                 </form>
 
@@ -110,3 +97,4 @@ function Login() {
 }
 
 export default Login;
+
