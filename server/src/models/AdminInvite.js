@@ -34,7 +34,6 @@ const adminInviteSchema = new mongoose.Schema({
 });
 
 // Indexes
-adminInviteSchema.index({ token: 1 }, { unique: true });
 adminInviteSchema.index({ email: 1, usedAt: 1 });
 
 /**

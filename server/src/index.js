@@ -1,4 +1,9 @@
 require('dotenv').config();
+const dns = require('dns');
+
+// Use Google public DNS to resolve MongoDB Atlas SRV records
+// (workaround for local DNS servers that can't resolve them)
+dns.setServers(['8.8.8.8', '8.8.4.4']);
 const express = require('express');
 const cors = require('cors');
 const cookieParser = require('cookie-parser');

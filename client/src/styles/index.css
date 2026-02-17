@@ -31,7 +31,9 @@
 }
 
 /* ─── Reset & Base ──────────────────────────────────────────────── */
-*, *::before, *::after {
+*,
+*::before,
+*::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
@@ -192,7 +194,7 @@ a:hover {
 
 /* ─── Main Container ────────────────────────────────────────────── */
 .main-container {
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
   padding: 2rem 1.5rem;
 }
@@ -330,7 +332,9 @@ a:hover {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ─── Section Titles ────────────────────────────────────────────── */

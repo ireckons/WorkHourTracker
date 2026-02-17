@@ -108,8 +108,9 @@ router.get('/', validate(dateQueryRule), async (req, res) => {
 });
 
 /**
- * GET /api/sessions/today/summary
- * Returns today's summary: total worked time, progress, active session, and goal.
+ * GET /api/sessions/today/summary?date=YYYY-MM-DD
+ * Returns a day's summary: total worked time, progress, active session, and goal.
+ * Defaults to today if no date is provided.
  *
  * Response: {
  *   date, totalMs, totalFormatted, goalHours, progressPercent,
@@ -120,8 +121,10 @@ router.get('/today/summary', async (req, res) => {
     try {
         const user = await User.findById(req.userId);
         const timezone = user.timezone || 'UTC';
-        const today = getTodayInTimezone(timezone);
-        const { dayStart, dayEnd } = getDayBounds(today, timezone);
+        const date = (req.query.date && /^\d{4}-\d{2}-\d{2}$/.test(req.query.date))
+            ? req.query.date
+            : getTodayInTimezone(timezone);
+        const { dayStart, dayEnd } = getDayBounds(date, timezone);
 
         const sessions = await Session.find({
             userId: req.userId,
@@ -129,18 +132,18 @@ router.get('/today/summary', async (req, res) => {
             $or: [{ endAt: { $gte: dayStart } }, { endAt: null }],
         }).sort({ startAt: 1 });
 
-        const totalMs = computeDayTotal(sessions, today, timezone);
+        const totalMs = computeDayTotal(sessions, date, timezone);
 
-        // Get goal for today (or fall back to user's default)
+        // Get goal for this day (or fall back to user's default)
         const DailyGoal = require('../models/DailyGoal');
-        const goalDoc = await DailyGoal.findOne({ userId: req.userId, date: today });
+        const goalDoc = await DailyGoal.findOne({ userId: req.userId, date });
         const goalHours = goalDoc ? goalDoc.goalHours : user.defaultDailyGoal;
 
         const progressPercent = computeProgressPercent(totalMs, goalHours);
         const activeSession = sessions.find((s) => !s.endAt) || null;
 
         res.json({
-            date: today,
+            date,
             totalMs,
             totalFormatted: formatDuration(totalMs),
             goalHours,
@@ -149,8 +152,76 @@ router.get('/today/summary', async (req, res) => {
             sessions,
         });
     } catch (err) {
-        console.error('Today summary error:', err);
-        res.status(500).json({ error: 'Failed to get today summary' });
+        console.error('Day summary error:', err);
+        res.status(500).json({ error: 'Failed to get day summary' });
+    }
+});
+
+/**
+ * GET /api/sessions/monthly-summary?month=YYYY-MM
+ * Returns per-day work hours for the entire month.
+ *
+ * Response: { month, days: { 'YYYY-MM-DD': { totalMs, totalFormatted } } }
+ */
+router.get('/monthly-summary', async (req, res) => {
+    try {
+        const { DateTime } = require('luxon');
+        const user = await User.findById(req.userId);
+        const timezone = user.timezone || 'UTC';
+
+        // Determine which month to query (default to current month)
+        const now = DateTime.now().setZone(timezone);
+        const monthParam = req.query.month; // 'YYYY-MM'
+        let monthStart;
+        if (monthParam && /^\d{4}-\d{2}$/.test(monthParam)) {
+            monthStart = DateTime.fromFormat(monthParam + '-01', 'yyyy-MM-dd', { zone: timezone }).startOf('day');
+        } else {
+            monthStart = now.startOf('month');
+        }
+        const nextMonth = monthStart.plus({ months: 1 });
+
+        // Build array of all dates in the month
+        const dates = [];
+        let cursor = monthStart;
+        while (cursor < nextMonth) {
+            dates.push(cursor.toFormat('yyyy-MM-dd'));
+            cursor = cursor.plus({ days: 1 });
+        }
+
+        // Find all sessions that overlap this month
+        const sessions = await Session.find({
+            userId: req.userId,
+            startAt: { $lt: nextMonth.toJSDate() },
+            $or: [{ endAt: { $gte: monthStart.toJSDate() } }, { endAt: null }],
+        }).sort({ startAt: 1 });
+
+        // Compute per-day totals
+        const days = {};
+        for (const date of dates) {
+            days[date] = { totalMs: 0, totalFormatted: '00:00' };
+        }
+
+        for (const session of sessions) {
+            const segments = splitSessionByDay(session, timezone);
+            for (const seg of segments) {
+                if (days[seg.date]) {
+                    days[seg.date].totalMs += seg.durationMs;
+                }
+            }
+        }
+
+        // Format durations
+        for (const date of dates) {
+            days[date].totalFormatted = formatDuration(days[date].totalMs);
+        }
+
+        res.json({
+            month: monthStart.toFormat('yyyy-MM'),
+            days,
+        });
+    } catch (err) {
+        console.error('Monthly summary error:', err);
+        res.status(500).json({ error: 'Failed to get monthly summary' });
     }
 });
 

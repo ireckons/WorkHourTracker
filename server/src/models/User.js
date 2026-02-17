@@ -45,9 +45,6 @@ const userSchema = new mongoose.Schema(
     { timestamps: true }
 );
 
-// Index for fast email lookups during login
-userSchema.index({ email: 1 });
-
 /**
  * Pre-save hook: hash the plain-text password before persisting.
  * We store the hash in `passwordHash` — the route passes the raw

@@ -4,15 +4,37 @@ import { useAuth } from '../context/AuthContext';
 import ProgressBar from '../components/ProgressBar';
 import SessionList from '../components/SessionList';
 import GoalEditor from '../components/GoalEditor';
+import WorkCalendar from '../components/WorkCalendar';
 import '../styles/Dashboard.css';
+
+/**
+ * Helper: get today's date as YYYY-MM-DD in local timezone.
+ */
+function getTodayStr() {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+}
+
+/**
+ * Format YYYY-MM-DD as a readable date string.
+ */
+function formatDateDisplay(dateStr) {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    const date = new Date(y, m - 1, d);
+    return date.toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric',
+    });
+}
 
 /**
  * Main dashboard page.
  *
- * - Fetches today's summary (total hours, progress, sessions, goal) on mount.
- * - Refreshes summary immediately on session start/end.
- * - Sets up a 60-second interval to auto-refresh the progress bar while
- *   a session is active (so the bar grows in real-time).
+ * - Fetches summary for the selected date (defaults to today).
+ * - Clicking a calendar date loads that day's data.
+ * - Sets up a 60-second interval to auto-refresh while a session is active.
  */
 function Dashboard() {
     const { user } = useAuth();
@@ -20,10 +42,15 @@ function Dashboard() {
     const [loading, setLoading] = useState(true);
     const [actionLoading, setActionLoading] = useState(false);
     const [error, setError] = useState('');
+    const [selectedDate, setSelectedDate] = useState(null); // null = today
 
-    const fetchSummary = useCallback(async () => {
+    const viewingToday = !selectedDate || selectedDate === getTodayStr();
+    const displayDate = selectedDate || getTodayStr();
+
+    const fetchSummary = useCallback(async (date) => {
         try {
-            const res = await api.get('/sessions/today/summary');
+            const dateParam = date ? `?date=${date}` : '';
+            const res = await api.get(`/sessions/today/summary${dateParam}`);
             setSummary(res.data);
             setError('');
         } catch (err) {
@@ -34,29 +61,29 @@ function Dashboard() {
         }
     }, []);
 
-    // Fetch summary on mount
+    // Fetch summary on mount and when selectedDate changes
     useEffect(() => {
-        fetchSummary();
-    }, [fetchSummary]);
+        setLoading(true);
+        fetchSummary(selectedDate);
+    }, [selectedDate, fetchSummary]);
 
-    // Auto-refresh every 60 seconds while a session is active
-    // This keeps the progress bar updating in real-time
+    // Auto-refresh every 60 seconds while a session is active (only for today)
     useEffect(() => {
-        if (!summary?.activeSession) return;
+        if (!summary?.activeSession || !viewingToday) return;
 
         const interval = setInterval(() => {
-            fetchSummary();
-        }, 60000); // every 1 minute
+            fetchSummary(selectedDate);
+        }, 60000);
 
         return () => clearInterval(interval);
-    }, [summary?.activeSession, fetchSummary]);
+    }, [summary?.activeSession, viewingToday, selectedDate, fetchSummary]);
 
     const handleStartWork = async () => {
         setActionLoading(true);
         setError('');
         try {
             await api.post('/sessions/start');
-            await fetchSummary(); // Immediately refresh
+            await fetchSummary(selectedDate);
         } catch (err) {
             setError(err.response?.data?.error || 'Failed to start session');
         } finally {
@@ -69,7 +96,7 @@ function Dashboard() {
         setError('');
         try {
             await api.patch('/sessions/end');
-            await fetchSummary(); // Immediately refresh
+            await fetchSummary(selectedDate);
         } catch (err) {
             setError(err.response?.data?.error || 'Failed to end session');
         } finally {
@@ -81,7 +108,19 @@ function Dashboard() {
         setSummary((prev) => prev ? { ...prev, goalHours: newGoalHours } : prev);
     };
 
-    if (loading) {
+    const handleDateSelect = (dateStr) => {
+        if (dateStr === getTodayStr()) {
+            setSelectedDate(null); // reset to today
+        } else {
+            setSelectedDate(dateStr);
+        }
+    };
+
+    const handleBackToToday = () => {
+        setSelectedDate(null);
+    };
+
+    if (loading && !summary) {
         return (
             <div className="dashboard-loading">
                 <div className="loading-spinner" />
@@ -93,108 +132,127 @@ function Dashboard() {
     const isActive = !!summary?.activeSession;
 
     return (
-        <div className="dashboard">
-            {/* Header */}
-            <div className="dashboard-header">
-                <div className="greeting">
-                    <h1>
-                        Good {getGreeting()}, <span className="user-name">{user?.name?.split(' ')[0]}</span>
-                    </h1>
-                    <p className="date-display">
-                        📅 {new Date().toLocaleDateString('en-US', {
-                            weekday: 'long',
-                            year: 'numeric',
-                            month: 'long',
-                            day: 'numeric',
-                        })}
-                    </p>
-                </div>
+        <div className="dashboard-layout">
+            {/* Left column — main dashboard content */}
+            <div className="dashboard-main">
+                <div className="dashboard">
+                    {/* Header */}
+                    <div className="dashboard-header">
+                        <div className="greeting">
+                            <h1>
+                                {viewingToday ? (
+                                    <>Good {getGreeting()}, <span className="user-name">{user?.name?.split(' ')[0]}</span></>
+                                ) : (
+                                    <>Viewing <span className="user-name">{formatDateDisplay(displayDate)}</span></>
+                                )}
+                            </h1>
+                            <p className="date-display">
+                                📅 {formatDateDisplay(displayDate)}
+                                {!viewingToday && (
+                                    <button className="btn-back-today" onClick={handleBackToToday}>
+                                        ← Back to Today
+                                    </button>
+                                )}
+                            </p>
+                        </div>
 
-                {/* Start / End Work Button */}
-                <button
-                    className={`btn btn-action ${isActive ? 'btn-stop' : 'btn-start'}`}
-                    onClick={isActive ? handleEndWork : handleStartWork}
-                    disabled={actionLoading}
-                    id="work-toggle-btn"
-                >
-                    {actionLoading ? (
-                        <span className="btn-loading">⏳</span>
-                    ) : isActive ? (
-                        <>
-                            <span className="btn-icon">⏹</span>
-                            End Work
-                        </>
-                    ) : (
-                        <>
-                            <span className="btn-icon">▶</span>
-                            Start Work
-                        </>
-                    )}
-                </button>
+                        {/* Start / End Work Button — only for today */}
+                        {viewingToday && (
+                            <button
+                                className={`btn btn-action ${isActive ? 'btn-stop' : 'btn-start'}`}
+                                onClick={isActive ? handleEndWork : handleStartWork}
+                                disabled={actionLoading}
+                                id="work-toggle-btn"
+                            >
+                                {actionLoading ? (
+                                    <span className="btn-loading">⏳</span>
+                                ) : isActive ? (
+                                    <>
+                                        <span className="btn-icon">⏹</span>
+                                        End Work
+                                    </>
+                                ) : (
+                                    <>
+                                        <span className="btn-icon">▶</span>
+                                        Start Work
+                                    </>
+                                )}
+                            </button>
+                        )}
+                    </div>
+
+                    {error && <div className="alert alert-error">{error}</div>}
+
+                    {/* Stats Cards */}
+                    <div className="stats-row">
+                        <div className="stat-card">
+                            <div className="stat-icon">⏱</div>
+                            <div className="stat-content">
+                                <span className="stat-value">{summary?.totalFormatted || '00:00'}</span>
+                                <span className="stat-label">Hours Worked</span>
+                            </div>
+                        </div>
+                        <div className="stat-card">
+                            <div className="stat-icon">🎯</div>
+                            <div className="stat-content">
+                                <span className="stat-value">{summary?.goalHours?.toFixed(1) || '8.0'}h</span>
+                                <span className="stat-label">Daily Goal</span>
+                            </div>
+                        </div>
+                        <div className="stat-card">
+                            <div className="stat-icon">📊</div>
+                            <div className="stat-content">
+                                <span className="stat-value">{Math.round(summary?.progressPercent || 0)}%</span>
+                                <span className="stat-label">Progress</span>
+                            </div>
+                        </div>
+                        <div className="stat-card">
+                            <div className="stat-icon">📝</div>
+                            <div className="stat-content">
+                                <span className="stat-value">{summary?.sessions?.length || 0}</span>
+                                <span className="stat-label">Sessions</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Progress Bar — always shown */}
+                    <div className="card">
+                        <ProgressBar
+                            workedMs={summary?.totalMs || 0}
+                            goalHours={summary?.goalHours || 8}
+                        />
+                    </div>
+
+                    {/* Bottom section: Goal Editor + Session List */}
+                    <div className="dashboard-grid">
+                        <div className="card">
+                            {summary && (
+                                <GoalEditor
+                                    goalHours={summary.goalHours}
+                                    date={summary.date}
+                                    onGoalUpdated={handleGoalUpdated}
+                                />
+                            )}
+                        </div>
+                        <div className="card">
+                            {summary && (
+                                <SessionList
+                                    sessions={summary.sessions}
+                                    timezone={user?.timezone}
+                                />
+                            )}
+                        </div>
+                    </div>
+                </div>
             </div>
 
-            {error && <div className="alert alert-error">{error}</div>}
-
-            {/* Stats Cards */}
-            <div className="stats-row">
-                <div className="stat-card">
-                    <div className="stat-icon">⏱</div>
-                    <div className="stat-content">
-                        <span className="stat-value">{summary?.totalFormatted || '00:00'}</span>
-                        <span className="stat-label">Hours Worked</span>
-                    </div>
-                </div>
-                <div className="stat-card">
-                    <div className="stat-icon">🎯</div>
-                    <div className="stat-content">
-                        <span className="stat-value">{summary?.goalHours?.toFixed(1) || '8.0'}h</span>
-                        <span className="stat-label">Daily Goal</span>
-                    </div>
-                </div>
-                <div className="stat-card">
-                    <div className="stat-icon">📊</div>
-                    <div className="stat-content">
-                        <span className="stat-value">{Math.round(summary?.progressPercent || 0)}%</span>
-                        <span className="stat-label">Progress</span>
-                    </div>
-                </div>
-                <div className="stat-card">
-                    <div className="stat-icon">📝</div>
-                    <div className="stat-content">
-                        <span className="stat-value">{summary?.sessions?.length || 0}</span>
-                        <span className="stat-label">Sessions</span>
-                    </div>
-                </div>
-            </div>
-
-            {/* Progress Bar */}
-            {summary && (
+            {/* Right column — Work Calendar */}
+            <div className="dashboard-sidebar">
                 <div className="card">
-                    <ProgressBar
-                        workedMs={summary.totalMs}
-                        goalHours={summary.goalHours}
+                    <WorkCalendar
+                        selectedDate={displayDate}
+                        onDateSelect={handleDateSelect}
                     />
-                </div>
-            )}
-
-            {/* Bottom section: Goal Editor + Session List */}
-            <div className="dashboard-grid">
-                <div className="card">
-                    {summary && (
-                        <GoalEditor
-                            goalHours={summary.goalHours}
-                            date={summary.date}
-                            onGoalUpdated={handleGoalUpdated}
-                        />
-                    )}
-                </div>
-                <div className="card">
-                    {summary && (
-                        <SessionList
-                            sessions={summary.sessions}
-                            timezone={user?.timezone}
-                        />
-                    )}
                 </div>
             </div>
         </div>
